@@ -1,0 +1,617 @@
+#!/usr/bin/env bash
+#***************************************************************************#
+# Authors:								                                                  #
+#   Ian Arthur Nascimento <inascime@lbl.gov> 	   	    	                    #
+#   Helen He                                                                #
+#   	                                				                              #
+# NERSC (National Energy Research Scientific Computing)                     #
+#									                                                          #
+# A wrapper for squeue, scontrol and sinfo (SLURM) command options	        #
+# Displays formatted information about jobs in the queue.                   #
+# 									                                                        #
+# This script assumes squeue, sinfo and scontrol are in the default path    #
+# 									                                                        #
+# sqs is a work in progress					                                        #
+#***************************************************************************#
+
+# Some initial setup
+#set -x
+export PATH=/opt/slurm/default/bin:$PATH
+LC_ALL=C
+
+if [ -n "$NERSC_HOST" ]; then
+	c_host=$NERSC_HOST
+else
+	c_host=$(hostname)
+	c_host=${c_host%??}
+fi
+
+if [[ -n "$USER" ]];
+then
+	myuser=$USER
+elif [[ -n "$LOGNAME" ]];
+then
+	myuser=$LOGNAME
+elif whoami &>/dev/null
+then
+	myuser=$(whoami)
+elif  logname &>/dev/null
+then
+	myuser=$(logname)
+fi
+
+sqs=$(basename -- "$0")
+
+## false | true; echo $?
+## 1
+set -o pipefail
+
+border() {
+printf '=%.0s' {1..70}
+echo
+}
+
+validate() {
+if ! type -P "$1" &>/dev/null; then
+	echo "$sqs: Fatal error - $1 not found."
+	exit 1
+fi
+}
+
+validate squeue
+
+opterr() {
+echo "$sqs: Unrecognized option $1" >&2
+exit 1
+}
+
+squeueargs=()
+userr=0
+w_header="JOBID              ST   USER       NAME         NODES REQUESTED  USED       SUBMIT_TIME           PARTITION  QOS        MEMORY     CPUS       REPO       RANK_P   RANK_BF  REASON"
+c_header="JOBID              ST   REASON     USER     NAME         NODES USED     REQUESTED  SUBMIT                PARTITION  RANK_P  RANK_ST"
+
+synopsis() {
+
+echo "usage
+      sqs [ -w -x -u username -r -s -p partition -np partition ] [ --help ] { -n } { -f jobid jobid jobid...} [ jobid jobid... ]
+      -n and -f cannot be combined with other options
+
+        -w Wide listing including more details
+
+        -u username Prints only jobs for username. If no username is provided, print jobs for the user issuing sqs
+
+        -s Prints a summary about jobs in the queue
+
+        -p partition[,partition,partition...] Print jobs in the partition(s) specified
+
+	      -np partition[,partition,partition...] Do not print jobs in the partition(s) specified
+
+        -n Displays formatted information about partitions and nodes
+
+        -f jobid[,jobid,jobid...] Prints very detailed information about jobid(s) or all jobs if no jobid provided.
+
+	      -x Wide listing including array expanded jobs
+
+	      -p partition Displays only jobs in given partition.
+
+        --help Prints synopsis"
+
+	exit "$1"
+}
+
+cmd() {
+# call squeue and its flags
+squeue "${squeueargs[@]}"
+}
+
+convert_t() {
+# Convert REQUESTED TIME timestamps. e.g.: 1-00:00:00 to 24:00:00
+awk '{n=split($'$1',a,"[-:]");if(n=="4")a[1]=a[1]*24+a[2];if(n=="4")$'$1' = sprintf("%s:%s:%s", a[1], a[2], a[3]);print}'
+}
+
+assort_rank() {
+# Custom, prettier sort: RUNNING JOBS > PD JOBS > OTHER
+if [ $1 == "0" ]
+then
+	awk '{ if ($2 == "R") r = r ORS $0; else if ($2 == "PD" && $11 ~ /[0-9]/) rr = rr ORS $0; else if ($2 == "PD" && $11 == " ") na = na ORS $0; else restt = restt ORS $0; next } { printf "%s", $0 } END { print r rr na restt }'
+else
+	awk '{ if ($2 == "R") r = r ORS $0; else if ($2 == "PD" && $10 ~ /[0-9]/) rr = rr ORS $0; else if ($2 == "PD" && $10 == " ") na = na ORS $0; else restt = restt ORS $0; next } { printf "%s", $0 } END { print r rr na restt }'
+fi
+}
+
+res=$(mktemp /tmp/XXXXXX || exit 1)
+
+rank_resources() {
+# Rank jobs with reason RESOURCES for both RANK columns using PRIORITY before everything else. Resources jobs will NOT be ranking by BACKFILL
+if (( "$1" == "0" )); then
+	sort -k12,12nr | awk -v ress="$res" '{printf "%s %6s\n", $0,$13 = ($2 == "PD" && $3 == "Resources") ? ++rnnk : ""} END {printf "%d\n", rnnk > ress}' | awk '{printf "%s %6s\n", $0,$14 = ($2 == "PD" && $3 == "Resources") ? ++rvk : ""}'
+elif (( "$1" == "1" )); then
+	sort -k16,16nr | awk -v ress="$res" '{printf "%s %6s\n", $0,$17 = ($2 == "PD" && $3 == "Resources") ? ++rnnk : ""} END {printf "%d\n", rnnk > ress}' | awk '{printf "%s %6s\n", $0,$18 = ($2 == "PD" && $3 == "Resources") ? ++rvk : ""}'
+#END {printf "%d\n", rnnk > ress}
+fi
+}
+
+adjust() {
+# RANK_BF
+# After ranking RESOURCES jobs by their PRIORITY, get the BACKFILL ranking for NOT-RESOURCES jobs.
+awk -v r_mode="$1" -v res="$res" '
+ {
+# parse through squeue various states.
+#"cat " res | getline ress
+getline ress <res
+
+if ( r_mode == "0" ) {
+	if($2 == "PD" && $11 != "N/A" && $3 != "Resources") {$13=++ress} else if($3 != "Resources" && $11 == "N/A" || $3 != "Resources" && $2 == "R"){$13="N/A"}
+	print
+}
+else {
+	if($2 == "PD" && $12 != "N/A" && $3 != "Resources") {$17=++ress} else if($3 != "Resources" && $12 == "N/A" || $3 != "Resources" && $2 == "R"){$17="N/A"}
+	print
+     }
+#	print
+ }'
+
+}
+
+adj() {
+# RANK_P
+# AFTER setting up RESOURCES rankings and BACKFILL rankings, get the PRIORITY ranking for NOT-RESOURCES jobs.
+if  [[ "$1" == "0" ]]
+then
+	sort -k12,12nr | awk -v res="$res" '{getline rank <res;if($3 != "Resources" && $2 == "PD") $14=++rank ; print}' | awk '{if($2!="PD")$14="N/A";print}'
+	rm -f "$res"
+elif [[ "$1" == "1" ]]; then
+	sort -k16,16nr | awk -v res="$res" '{getline rank <res;if($3 != "Resources" && $2 == "PD") $18=++rank ; print}' | awk '{if($2!="PD")$18="N/A";print}'
+	rm -f "$res"
+fi
+#rm -f "$res"
+}
+
+resources() {
+# Custom, prettier sort(by JOB STATE and REASON) in this order: "R" > "PD(Resources)" > "PD(Other)" > Other(CG, F, etc...)
+awk '{ if ($2 == "R") r = r ORS $0; else if ($2 == "PD" && $3 == "Resources") rr = rr ORS $0; else if ($2 == "PD" && $3 != "Resources") na = na ORS $0; else restt = restt ORS $0; next } { printf "%s", $0 } END { print r rr na restt }'
+
+}
+
+arrange() {
+# sorts starttime column
+if (( "$1" == "0" )); then
+	sort -b -k11,11
+elif (( "$1" == "1" )); then
+	sort -b -k12
+fi
+}
+
+rearrange() {
+# Fix the format style
+n_format=$1
+if [[ "$n_format" == "1" ]]; then
+	awk '{printf "%-18s %-4s %-10s %-8s %-12s %-5s %-8s %-10s %-21s %-10s %-8s %-5s\n", $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$14,$13 ; }'
+	#awk '{printf "%-18s %-4s %-10s %-14s %-15s %-15s %-12s %-10s %-21s %-10s %-15s %-15s\n", $1,$2,$4,$5,$6,$7,$8,$9,$10,$18,$17,$13,$14 ; }'
+fi
+if [[ "$n_format" == "2" ]]; then
+	#echo "$w_header"
+	awk '{printf "%-18s %-4s %-10s %-12s %-5s %-10s %-10s %-21s %-10s %-10s %-10s %-10s %-10s %-8s %-8s %-15s\n", $1,$2,$4,$5,$6,$7,$8,$9,$10,$11,$13,$14,$15,$18,$17,$3 ; }'
+#sed -e "1 s/^.*$/$wide_header/"
+fi
+}
+chop() {
+if [[ -n "$1" && ! -n "$2" ]]
+then
+	awk '{print}' > $mytemp
+	IFS=, read -ra parti <<< "$1"; for a in "${parti[@]}"
+	do
+		grep "$a" $mytemp
+	done
+	rm -f $mytemp
+	exit 0
+elif [[ ! -n "$1" && -n "$2" ]]
+then
+	mtemp=$(mktemp)
+	awk '{print}' > $mitemp
+	grep -E -v $(echo "$2" | tr ',' '|') $mitemp
+        rm -f $mitemp
+	exit 0
+fi
+}
+
+summary() {
+# Print a summary with some interesting data
+QUEUEJOBS=$(mktemp /tmp/XXXXXX || exit 1)
+EXQUEUEJOBS=$(mktemp /tmp/XXXXXX || exit 1)
+NODEINFO=$(mktemp /tmp/XXXXXX || exit 1)
+CGLIST=$(mktemp /tmp/XXXXXX || exit 1)
+CGXLIST=$(mktemp /tmp/XXXXXX || exit 1)
+squeue -h -o "%.t %.P %.C %.D" > $QUEUEJOBS
+squeue -h -o "%.t %.P %.D" -r > $EXQUEUEJOBS
+sinfo -h -o "%.25P %.25F %.25C %.25l" > $NODEINFO
+shared=1
+
+if grep -w shared $NODEINFO &>/dev/null
+then
+	shared=0
+	shared_cpu=$(grep -w shared $NODEINFO | awk '{print $2}' | cut -d/ -f4)
+	shared_slots=$((shared_cpu*64))
+	shared_used=0
+	slots_available=0
+fi
+
+p_jobs=0
+f_jobs=0
+r_jobs=0
+jobs=$(wc -l < $QUEUEJOBS)
+jobs_expanded=$(wc -l < $EXQUEUEJOBS)
+all_partitions=$(awk '{print $1}' $NODEINFO)
+p_count=$(wc -l < $NODEINFO)
+
+# --- Begin of backlog ---
+#i should do something about shared partitions for the backlog calculation here
+# squeue's %.M may not display all digits so some special handling is required
+#used=$(squeue -h -o "%.t %.M" | awk '{if ($1!="R")next}{print}' | awk -F: -v 'tis=0' 'NF==1 { tis+=$1 } NF==2 {tis += $2 + ($1*60) } NF==3 { tis += ($1*60*60)+($2*60)+$3 } END {print tis}')
+#used=$(echo "scale=25;$used/3600" | bc)
+#request=$(squeue -h -o "%.l" | awk -F: -v 'tis=0' 'NF==1 { tis+=$1 } NF==2 {tis += $2 + ($1*60) } NF==3 { tis += ($1*60*60)+($2*60)+$3 } END {print tis}')
+#request=$(echo "scale=25;$request/3600" | bc)
+#backlog_hours=$(echo "scale=3;$request-$used" |bc)
+#backlog_sum=$(echo "scale=3;$backlog_hours * $jobs" |bc)
+#total_backlog=$(echo "scale=3;$backlog_sum/$total_nodes" | bc)
+# --- End of backlog ---
+# let's grab some node stats for our usage summary
+# subject to changes
+
+p_jobs=$(awk '$1=="PD"' $QUEUEJOBS | wc -l)
+r_jobs=$(awk '$1=="R"' $QUEUEJOBS | wc -l)
+pex_jobs=$(awk '$1=="PD"' $EXQUEUEJOBS | wc -l)
+rex_jobs=$(awk '$1=="R"' $EXQUEUEJOBS | wc -l)
+
+if [[ $shared = "0" ]]
+then
+	shared_used=$(grep -w shared $NODEINFO | awk '{print $3}' |  cut -d/ -f1)
+	slots_available=$((shared_slots-shared_used))
+fi
+
+total=0
+total_cg=0
+total_cgx=0
+fl_count=0
+cgt=$(awk '$1=="CG"' $QUEUEJOBS)
+cgtx=$(awk '$1=="CG"' $EXQUEUEJOBS)
+closing_jobs=$(awk '$1=="CG"' $QUEUEJOBS | wc -l)
+closing_jobsx=$(awk '$1=="CG"' $EXQUEUEJOBS | wc -l)
+
+while IFS=$'\n' read -r one two; do [[ "$one" == "CG" ]] && total_cg=$((total_cg+two)); done <<< "$cgt"
+while IFS=$'\n' read -r three four; do [[ "$three" == "CG" ]] && total_cg=$((total_cgx+four)); done <<< "$cgtx"
+
+border
+echo "# Total jobs: $jobs / $jobs_expanded (array expansion)"
+echo "# Pending Jobs: $p_jobs / $pex_jobs"
+echo "# Running Jobs: $r_jobs / $rex_jobs"
+echo "# ---"
+
+for queue in $all_partitions
+do
+	r_jobs=0
+        cg_jobs=0
+        tcg_nodes=0
+        tcgx_nodes=0
+
+        if [[ $queue = *\* ]]; then queue=${queue%?};fi
+        pr_jobs=$(awk '{if($1!="R")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
+        cg_jobs=$(awk '{if($1!="CG")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
+        p_pd=$(awk '{if($1!="PD")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
+        p_apd=$(awk '{if($1!="PD")next;if($2!="'$queue'")next;print}' $EXQUEUEJOBS | wc -l)
+        awk '{if($1!="CG")next;if($2!="'$queue'")next;print $4}' $QUEUEJOBS > $CGLIST
+        prx_jobs=$(awk '{if($1!="R")next;if($2!="'$queue'")next;print}' $EXQUEUEJOBS | wc -l)
+        cgx_jobs=$(awk '{if($1!="CG")next;if($2!="'$queue'")next;print}' $EXQUEUEJOBS | wc -l)
+        awk '{if($1!="CG")next;if($2!="'$queue'")next;print $3}' $EXQUEUEJOBS > $CGXLIST
+	timelimit=$(grep -w $queue $NODEINFO | awk '{print $4}')
+
+                while read -r j; do
+                        tcg_nodes=$((tcg_jobs+j))
+                done < $CGLIST
+
+                while read -r k; do
+                        tcgx_nodes=$((tcgx_jobs+k))
+                done < $CGXLIST
+
+        alloc_nodes=$(grep -w $queue $NODEINFO | awk '{print $2}' | cut -d/ -f1)
+        total=$((total+alloc_nodes))
+	partition_down=$(grep -w $queue $NODEINFO | awk '{print $2}' | cut -d/ -f3)
+	partition_nodes=$(grep -w $queue $NODEINFO | awk '{print $2}' | cut -d/ -f4)
+	partition_alloc=$(grep -w $queue $NODEINFO | awk '{print $2}' | cut -d/ -f1)
+	available_nodes=$((partition_nodes-partition_alloc-partition_down))
+	p_pd=$(awk '{if($1!="PD")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
+	p_apd=$(awk '{if($1!="PD")next;if($2!="'$queue'")next;print}' $EXQUEUEJOBS | wc -l)
+	((fl_count++))
+	printf '# %s node usage(allocated/total): %s/%s \n' "$queue" "$partition_alloc" "$partition_nodes"
+	printf '# Available Nodes/Unavailable Nodes: %s/%s \n' "$available_nodes" "$partition_down"
+        printf '# %s/%s jobs running, %s/%s jobs in CG state using %s/%s nodes \n' "$pr_jobs" "$prx_jobs" "$cg_jobs" "$cgx_jobs" "$tcg_nodes" "$tcgx_nodes"
+	printf '# %s/%s jobs pending \n' "$p_pd" "$p_apd"
+
+	if [[ $queue != "regular" ]]
+	then
+		printf '# Timelimit: %s \n' "$timelimit"
+	else
+		printf '# Timelimit: up to %s depending on QoS \n' "$timelimit"
+	fi
+
+	if [[ $fl_count != "$p_count" ]]; then echo "# ---";fi
+	if [[ $fl_count == "$p_count" && $queue == "shared" ]]; then
+		echo "# CPU slots available in the shared partition(available/total): $slots_available/$shared_slots"
+	elif [[ $fl_count == "$p_count" && $queue != "shared" ]]; then
+		echo "# ---"
+	elif [[ $fl_count != "$p_count" && $queue = "shared" ]]; then
+		echo "CPU slots available in the shared partition(available/total): $slots_available/$shared_slots"
+		echo "# ---"
+	fi
+done
+border
+rm -f $QUEUEJOBS $EXQUEUEJOBS $NODEINFO $CGLIST $CGXLIST
+exit 0
+
+}
+
+
+# scontrol show job [jobid] wrapper
+
+sctrl_wrap() {
+validate scontrol
+re='^[0-9]+$'
+
+if [[ "$1" == "all" ]]; then
+	scontrol show job
+	if [[ "$sum" ]];then summary;fi
+	exit 0
+fi
+
+IFS=, read -ra js <<< "$1"; for j in "${js[@]}"
+do
+	if [[ "$j" =~ $re  ]]; then
+        	scontrol show job "$j" 2>/dev/null
+        	if [ $? == "1" ];
+        	then
+                	echo "$sqs: $j invalid jobid"
+		fi
+        else
+		echo "$sqs: $j is not a number"
+		exit 1
+        fi
+done
+if [[ "$sum" ]]; then summary;fi
+exit 0
+}
+
+# sqs with no args
+if (( $# == "0" )); then
+	echo "$c_header"
+        squeue -o "%.18i %.2t %.10r %.10u %.12j %.5D %.5M %.10l %.20V %.12P %.20S %.15Q" | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | convert_t 7 | grep -w "$myuser"
+        exit 0
+fi
+
+# format styles
+
+format=1
+
+formatonce() {
+        if (( "$format" == 1 )); then
+                squeueargs+=(-h -o "%.18i %.3t %.10r %.10u %.12j %.8D %.10M %.10l %.20V %.12P %.20S %.15Q")
+        elif (( "$format" == 2 )); then
+                squeueargs+=(-h -o "%.18i %.3t %.10r %.10u %.12j %.10D %.10l %.10M %.25V %.12P %.6q %.20S %.10m %.10C %.10a %.15Q")
+	fi
+}
+
+# parsing flags
+thenp=1
+parts=1
+while true; do
+        case $1 in
+    -w)
+			dasha=0
+			userr=1
+      format="2"
+			name="$USER"
+      shift
+      ;;
+		-x)
+			format="2"
+			squeueargs+=(-r)
+			shift
+			;;
+		-p)
+			a_parts=$(mktemp)
+			sinfo -O partition > $a_parts
+			if [ -n $2 ];
+			then
+				IFS=, read -ra part <<< "$2"; for i in "${part[@]}"
+				do
+					if grep -w "$i" $a_parts 1>/dev/null; then
+					continue
+				else
+					echo "$sqs: Aborting, $i is not a valid partition. (Run sqs -n to view available partitions.)"
+					rm -f $a_parts
+					exit 1
+				fi
+				done
+			fi
+			rm -f $a_parts
+			mytemp=$(mktemp)
+			grab_p="$2"
+			parts=0
+			shift 2
+			#shift
+			;;
+		-np)
+			np_parts=$(mktemp)
+			sinfo -O partition > $np_parts
+			if [ -n $2 ];
+			then
+				IFS=, read -ra partv <<< "$2"; for v in "${partv[@]}"
+				do
+					if grep -w "$v" $np_parts 1>/dev/null; then
+						continue
+					else
+						echo "$sqs: Aborting, $v is not a valid partition. (Run sqs -n to view available partitions.)"
+						rm -f $np_parts
+						exit 1
+				fi
+				done
+			fi
+			rm -f $np_parts
+			mitemp=$(mktemp)
+			parts=0
+			nps="$2"
+			shift 2
+			;;
+		-s)
+			if [[ $# -gt "1" ]]
+			then
+				validate sinfo
+				sum="0"
+				shift
+			else
+				summary
+			fi
+			;;
+		-a)
+			dasha="0"
+			userr=0
+			shift
+			;;
+                -u)
+                        shift
+			case $1 in
+				[a-zA-Z]*)
+					dasha="0"
+					userr="1"
+                        		name="$1"
+					shift
+					;;
+				*)
+					dasha="0"
+					userr="1"
+					name="$USER"
+					;;
+                       	esac
+                        ;;
+		--help)
+			shift
+			synopsis 0
+			;;
+		-f)
+			if [ -n "$2" ]; then
+				sctrl_wrap "$2"
+			else
+				sctrl_wrap "all"
+			fi
+			shift 2
+			;;
+		-n)
+			#sinfo wrapper
+			shift
+			        if [ $# == 0 ];then sinfo -o "%.10P %.10a %.15l %.20F";fi
+			        if [ $sum ];then summary;fi
+				# if there is no more args then exit
+				(( ! $# )) && exit 0
+			case $1 in
+				-s)
+					sinfo -o "%.5p %.10s %.10a %10l %15F"
+					summary
+					shift
+					;;
+				-l)
+					sinfo -o "%.10P %.10s %.10a %.10l %.15F %.10T %.10z"
+					exit 0
+					shift
+					;;
+				-ls)
+					sinfo -o "%.10P %.10s %.10a %.10l %.15F %.10T %.10z"
+					summary
+					shift
+					;;
+				-sl)
+					sinfo -o "%.10P %.10s %.10a %.10l %.15F %.10T %.10z"
+					summary
+					shift
+					;;
+				*)
+					synopsis 1
+					;;
+			esac
+			;;
+        -*)
+			opterr "$1"
+                        ;;
+		[a-zA-Z]*)
+			opterr "$1"
+			;;
+		#["@#$%^*()-_=+"]*)
+		#	opterr "$1"
+		#	;;
+		!*)
+                        opterr "$1"
+			;;
+	        ?*)
+                        opterr "$1"
+			;;
+                *)
+			break
+                        ;;
+        esac
+done
+# run
+formatonce
+if [[ "$format" == 2 && "$parts" != 0 ]]
+then
+		if [[ "$userr" == 1 ]]
+		then
+			echo "$w_header"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2| grep -w "$name"
+			if [ $sum ];then summary;fi
+			exit 0
+		else
+			echo "$w_header"
+			cmd f1 | convert_t 7 | rank_resources 1 | arrange 1 | adjust "1" | adj 1 | resources | rearrange 2
+			if [ $sum ];then summary;fi
+			exit 0
+		fi
+elif [[ "$format" == 2 && "$parts" == 0 ]]; then
+		if [[ "$userr" == 1 ]]
+		then
+			echo "$w_header"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -w "$name" | chop "$grab_p" "$nps"
+			if [ $sum ]; then summary;fi
+			exit 0
+		else
+			echo "$w_header"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps"
+			if [ $sum ];then summary;fi
+			exit 0
+		fi
+
+
+elif [[ "$format" == 1 && "$parts" != 0 ]]; then
+		if [[ "$userr" == 1 ]]
+		then
+			echo "$c_header"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | convert_t 7 | grep -w "$name"
+			if [ $sum ];then summary;fi
+			exit 0
+		else
+			echo "$c_header"
+			cmd f2 | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1
+			if [ $sum ]; then summary;fi
+			exit 0
+		fi
+elif [[ "$format" == 1 && "$parts" == 0 ]]; then
+		if [[ "$userr" = 1 ]]
+		then
+			echo "$c_header"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | convert_t 7 | grep -w "$name" | chop "$grab_p" "$nps"
+			if [ $sum ]; then summary;fi
+			exit 0
+		else
+			echo "$c_header"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | convert_t 7 | chop "$grab_p" "$nps"
+                        if [ $sum ]; then summary;fi
+                        exit 0
+                fi
+fi
