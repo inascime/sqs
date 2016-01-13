@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #***************************************************************************#
-# Authors:								                                                  #
-#   Ian Arthur Nascimento <inascime@lbl.gov> 	   	    	                    #
-#   Helen He                                                                #
-#   	                                				                              #
+# Authors:								    #
+#   Ian Arthur Nascimento <inascime@lbl.gov> 	   	    	            #
+#   Helen He <yhe@lbl.gov>                                                  #
+#   Requests and suggestions welcome!					    #
 # NERSC (National Energy Research Scientific Computing)                     #
-#									                                                          #
-# A wrapper for squeue, scontrol and sinfo (SLURM) command options	        #
-# Displays formatted information about jobs in the queue.                   #
-# 									                                                        #
+#									    #
+# A wrapper for squeue, scontrol and sinfo (SLURM) command options	    #
+# Displays information about jobs in the queue.				    #
+# 									    #
 # This script assumes squeue, sinfo and scontrol are in the default path    #
-# 									                                                        #
-# sqs is a work in progress					                                        #
+# 									    #
+# Version: 1.3								    #
 #***************************************************************************#
 
 # Some initial setup
@@ -19,7 +19,7 @@
 export PATH=/opt/slurm/default/bin:$PATH
 LC_ALL=C
 
-if [ -n "$NERSC_HOST" ]; then
+if [ -n "${NERSC_HOST+1}" ]; then
 	c_host=$NERSC_HOST
 else
 	c_host=$(hostname)
@@ -37,9 +37,9 @@ then
 	myuser=$(whoami)
 elif  logname &>/dev/null
 then
+
 	myuser=$(logname)
 fi
-
 sqs=$(basename -- "$0")
 
 ## false | true; echo $?
@@ -73,7 +73,7 @@ c_header="JOBID              ST   REASON     USER     NAME         NODES USED   
 synopsis() {
 
 echo "usage
-      sqs [ -w -x -u username -r -s -p partition -np partition ] [ --help ] { -n } { -f jobid jobid jobid...} [ jobid jobid... ]
+      sqs [ -w -x -u username -r -s -p partition -np partition ] [ --help ] { -n } { -f jobid jobid jobid...} [ jobid jobid... ]      
       -n and -f cannot be combined with other options
 
         -w Wide listing including more details
@@ -82,19 +82,22 @@ echo "usage
 
         -s Prints a summary about jobs in the queue
 
-        -p partition[,partition,partition...] Print jobs in the partition(s) specified
+        -p partition [partition,partition...] Print jobs in the partition(s) specified
 
-	      -np partition[,partition,partition...] Do not print jobs in the partition(s) specified
+	-np partition [partition,partition...] Do not print jobs in the partition(s) specified
 
         -n Displays formatted information about partitions and nodes
 
-        -f jobid[,jobid,jobid...] Prints very detailed information about jobid(s) or all jobs if no jobid provided.
+        -f jobid Prints very detailed information about jobid or all jobs if no jobid provided.
 
-	      -x Wide listing including array expanded jobs
+	-x Wide listing including array expanded jobs
 
-	      -p partition Displays only jobs in given partition.
+	-p partition Displays only jobs in given partition.
 
-        --help Prints synopsis"
+        --help Prints synopsis
+	
+	jobid or jobid jobid... Prints only specified jobs, can be either a single job or a list of jobids separated by whitespace"
+
 
 	exit "$1"
 }
@@ -126,7 +129,7 @@ rank_resources() {
 if (( "$1" == "0" )); then
 	sort -k12,12nr | awk -v ress="$res" '{printf "%s %6s\n", $0,$13 = ($2 == "PD" && $3 == "Resources") ? ++rnnk : ""} END {printf "%d\n", rnnk > ress}' | awk '{printf "%s %6s\n", $0,$14 = ($2 == "PD" && $3 == "Resources") ? ++rvk : ""}'
 elif (( "$1" == "1" )); then
-	sort -k16,16nr | awk -v ress="$res" '{printf "%s %6s\n", $0,$17 = ($2 == "PD" && $3 == "Resources") ? ++rnnk : ""} END {printf "%d\n", rnnk > ress}' | awk '{printf "%s %6s\n", $0,$18 = ($2 == "PD" && $3 == "Resources") ? ++rvk : ""}'
+	sort -k16,16nr | awk -v ress="$res" '{printf "%s %6s\n", $0,$17 = ($2 == "PD" && $3 == "Resources") ? ++rnnk : ""} END {printf "%d\n", rnnk > ress}' | awk '{printf "%s %6s\n", $0,$18 = ($2 == "PD" && $3 == "Resources") ? ++rvk : ""}' 
 #END {printf "%d\n", rnnk > ress}
 fi
 }
@@ -140,15 +143,15 @@ awk -v r_mode="$1" -v res="$res" '
 #"cat " res | getline ress
 getline ress <res
 
-if ( r_mode == "0" ) {
-	if($2 == "PD" && $11 != "N/A" && $3 != "Resources") {$13=++ress} else if($3 != "Resources" && $11 == "N/A" || $3 != "Resources" && $2 == "R"){$13="N/A"}
+if ( r_mode == "0" ) {	
+	if($2 == "PD" && $11 != "N/A" && $3 != "Resources") {$13=++ress} else if($3 != "Resources" && $11 == "N/A" || $3 != "Resources" && $2 == "R"){$13="N/A"}	
 	print
 }
 else {
 	if($2 == "PD" && $12 != "N/A" && $3 != "Resources") {$17=++ress} else if($3 != "Resources" && $12 == "N/A" || $3 != "Resources" && $2 == "R"){$17="N/A"}
 	print
-     }
-#	print
+     }	
+#	print	
  }'
 
 }
@@ -174,12 +177,22 @@ awk '{ if ($2 == "R") r = r ORS $0; else if ($2 == "PD" && $3 == "Resources") rr
 }
 
 arrange() {
-# sorts starttime column
+# sorts starttime column while preserving the header.
 if (( "$1" == "0" )); then
 	sort -b -k11,11
 elif (( "$1" == "1" )); then
 	sort -b -k12
 fi
+}
+
+remove_col() {
+# Goes with compact format (Removes column 13 after ranking is properly set. * column RANK needs column 13 and 3)
+awk '{for(i=1;i<=NF;i++) line=(i==1)?$i:((i==13)?line:line OFS $i);print line}'
+}
+
+qos_slicer() {
+# Clean up QOS rows
+awk '{gsub(/low.*/,"low",$11)}{print}' | awk '{gsub("killab","killable",$11)}{print}' | awk '{gsub("premiu","premium",$11)}{print}' | awk '{gsub("scaven","scavenger",$11)}{print}' | awk '{gsub("serial","serialize",$11)}{print}' | awk '{gsub(/part_.*/,"part",$11)}{print}'
 }
 
 rearrange() {
@@ -208,8 +221,8 @@ then
 elif [[ ! -n "$1" && -n "$2" ]]
 then
 	mtemp=$(mktemp)
-	awk '{print}' > $mitemp
-	grep -E -v $(echo "$2" | tr ',' '|') $mitemp
+	awk '{print}' > $mitemp 
+	grep -E -v $(echo "$2" | tr ',' '|') $mitemp 
         rm -f $mitemp
 	exit 0
 fi
@@ -251,8 +264,8 @@ p_count=$(wc -l < $NODEINFO)
 #used=$(echo "scale=25;$used/3600" | bc)
 #request=$(squeue -h -o "%.l" | awk -F: -v 'tis=0' 'NF==1 { tis+=$1 } NF==2 {tis += $2 + ($1*60) } NF==3 { tis += ($1*60*60)+($2*60)+$3 } END {print tis}')
 #request=$(echo "scale=25;$request/3600" | bc)
-#backlog_hours=$(echo "scale=3;$request-$used" |bc)
-#backlog_sum=$(echo "scale=3;$backlog_hours * $jobs" |bc)
+#backlog_hours=$(echo "scale=25;$request-$used" |bc)
+#backlog_sum=$(echo "scale=25;$backlog_hours * $jobs" |bc)
 #total_backlog=$(echo "scale=3;$backlog_sum/$total_nodes" | bc)
 # --- End of backlog ---
 # let's grab some node stats for our usage summary
@@ -263,7 +276,7 @@ r_jobs=$(awk '$1=="R"' $QUEUEJOBS | wc -l)
 pex_jobs=$(awk '$1=="PD"' $EXQUEUEJOBS | wc -l)
 rex_jobs=$(awk '$1=="R"' $EXQUEUEJOBS | wc -l)
 
-if [[ $shared = "0" ]]
+if [[ $shared = "0" ]] 
 then
 	shared_used=$(grep -w shared $NODEINFO | awk '{print $3}' |  cut -d/ -f1)
 	slots_available=$((shared_slots-shared_used))
@@ -369,13 +382,13 @@ do
         	scontrol show job "$j" 2>/dev/null
         	if [ $? == "1" ];
         	then
-                	echo "$sqs: $j invalid jobid"
+                	echo "$sqs: $j invalid jobid"              	
 		fi
         else
 		echo "$sqs: $j is not a number"
 		exit 1
         fi
-done
+done	
 if [[ "$sum" ]]; then summary;fi
 exit 0
 }
@@ -399,18 +412,27 @@ formatonce() {
 	fi
 }
 
+# want to do something with this
+
+function arghandler {
+	if [[ $2 -gt "$1" ]]; then
+	synopsis 1
+	fi
+}
+
 # parsing flags
 thenp=1
 parts=1
+dasha=1
 while true; do
         case $1 in
-    -w)
+                -w)
 			dasha=0
 			userr=1
-      format="2"
+                        format="2"
 			name="$USER"
-      shift
-      ;;
+                        shift
+                        ;;
 		-x)
 			format="2"
 			squeueargs+=(-r)
@@ -423,9 +445,9 @@ while true; do
 			then
 				IFS=, read -ra part <<< "$2"; for i in "${part[@]}"
 				do
-					if grep -w "$i" $a_parts 1>/dev/null; then
+					if grep -w "$i" $a_parts 1>/dev/null; then 				
 					continue
-				else
+				else 
 					echo "$sqs: Aborting, $i is not a valid partition. (Run sqs -n to view available partitions.)"
 					rm -f $a_parts
 					exit 1
@@ -435,7 +457,7 @@ while true; do
 			rm -f $a_parts
 			mytemp=$(mktemp)
 			grab_p="$2"
-			parts=0
+			parts=0			
 			shift 2
 			#shift
 			;;
@@ -460,10 +482,10 @@ while true; do
 			parts=0
 			nps="$2"
 			shift 2
-			;;
+			;;	
 		-s)
 			if [[ $# -gt "1" ]]
-			then
+			then 
 				validate sinfo
 				sum="0"
 				shift
@@ -496,11 +518,11 @@ while true; do
 			shift
 			synopsis 0
 			;;
-		-f)
+		-f)			
 			if [ -n "$2" ]; then
 				sctrl_wrap "$2"
 			else
-				sctrl_wrap "all"
+				sctrl_wrap "all"					
 			fi
 			shift 2
 			;;
@@ -537,7 +559,7 @@ while true; do
 					;;
 			esac
 			;;
-        -*)
+                -*)
 			opterr "$1"
                         ;;
 		[a-zA-Z]*)
@@ -559,17 +581,18 @@ while true; do
 done
 # run
 formatonce
+dasha
 if [[ "$format" == 2 && "$parts" != 0 ]]
 then
 		if [[ "$userr" == 1 ]]
-		then
+		then 
 			echo "$w_header"
 			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2| grep -w "$name"
 			if [ $sum ];then summary;fi
 			exit 0
 		else
 			echo "$w_header"
-			cmd f1 | convert_t 7 | rank_resources 1 | arrange 1 | adjust "1" | adj 1 | resources | rearrange 2
+			cat f1 | convert_t 7 | rank_resources 1 | arrange 1 | adjust "1" | adj 1 | resources | rearrange 2 
 			if [ $sum ];then summary;fi
 			exit 0
 		fi
@@ -579,14 +602,14 @@ elif [[ "$format" == 2 && "$parts" == 0 ]]; then
 			echo "$w_header"
 			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -w "$name" | chop "$grab_p" "$nps"
 			if [ $sum ]; then summary;fi
-			exit 0
+			exit 0		
 		else
 			echo "$w_header"
 			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps"
 			if [ $sum ];then summary;fi
 			exit 0
 		fi
-
+	
 
 elif [[ "$format" == 1 && "$parts" != 0 ]]; then
 		if [[ "$userr" == 1 ]]
@@ -597,7 +620,7 @@ elif [[ "$format" == 1 && "$parts" != 0 ]]; then
 			exit 0
 		else
 			echo "$c_header"
-			cmd f2 | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1
+			cat f2 | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1
 			if [ $sum ]; then summary;fi
 			exit 0
 		fi
