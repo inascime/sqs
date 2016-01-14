@@ -1,0 +1,121 @@
+.\" Manpage for sqs.
+.\" Contact inascime@lbl.gov to correct errors or typos.
+.TH man 1 "Nov 30 2015" "1.1" "sqs man page"
+.SH NAME
+sqs \- Formatted SLURM squeue output. 
+.SH SYNOPSIS
+sqs [ -x -w -u username -r -s ] { --help } { -n } { -f [jobid] [jobid] [jobid] }
+.SH DESCRIPTION
+sqs is a wrapper for squeue, sinfo and scontrol. It adds two additional, sorted ranking columns: "RANK_BF" and "RANK_P". RANK_BF contains ranking based on jobs approximate START TIME(which is a product of backfill) while RANK_P contains ranking based on jobs assigned PRIORITY. The goal is to give users a rough estimate of their jobs position in the queue. RANK_BF and RANK_P may or may not agree with each other, RANK_P will be sorted in a numerical order. sqs can output a summary that includes general information about jobs in the queue and offers a number of options for usability described below. sqs provides a better format and sorting of job status information. The options -n and -f cannot be combined with other options as they essentially are direct wrappers to sinfo(1) and scontrol(1). The command sprio(1) can demonstrate jobs PRIORITY. 
+.SH OPTIONS
+	-w Wider display including additional columns.
+
+	\fB-u username\fR Prints only jobs for "username". If no username is provided, print jobs for the user issuing sqs
+
+	-s Prints a summary about jobs in the queue
+
+	-n Displays formatted information about partitions and nodes
+
+	\fB-f jobid[,jobid,jobid...]\fR Prints very detailed information about specified jobid(s) or all jobs if no jobid(s) given.
+
+	\fB-p partition[,partition,partition...]\fR Prints jobs in the partition(s) specified.
+
+	\fB-np partition[,partition,partition...]\fR Do not print jobs in the partition(s) specified
+
+	--help Prints usage
+
+.SH JOB STATE CODES
+Jobs typically pass through several states in the course of their execution. The typical states are PENDING, RUNNING, SUSPENDED, COMPLETING, and COMPLETED. An explanation of each state follows.
+
+\fB CG COMPLETING\fR
+    Job is in the process of completing. Some processes on some nodes may still be active. 
+\fB PD PENDING\fR
+    Job is awaiting resource allocation. 
+\fB R RUNNING\fR
+    Job currently has an allocation. 
+\fB S SUSPENDED\fR
+    Job has an allocation, but execution has been suspended and CPUs have been released for other jobs. 
+
+.SH JOB REASON CODES
+These codes identify the reason that a job is waiting for execution. A job may be waiting for more than one reason, in which case only one of those reasons is displayed.
+
+\fB AssociationJobLimit\fR
+    The job's association has reached its maximum job count. 
+\fB AssociationResourceLimit\fR
+    The job's association has reached some resource limit. 
+\fB AssociationTimeLimit\fR
+    The job's association has reached its time limit. 
+\fB BadConstraints\fR
+    The job's constraints can not be satisfied. 
+\fB BeginTime\fR
+    The job's earliest start time has not yet been reached. 
+\fB BlockFreeAction\fR
+    An IBM BlueGene block is being freed and can not allow more jobs to start. 
+\fB BlockMaxError\fR
+    An IBM BlueGene block has too many cnodes in error state to allow more jobs to start. 
+\fB Cleaning\fR
+    The job is being requeued and still cleaning up from its previous execution. 
+\fB Dependency\fR
+    This job is waiting for a dependent job to complete. 
+\fB FrontEndDown\fR
+    No front end node is available to execute this job. 
+\fB InactiveLimit\fR
+    The job reached the system InactiveLimit. 
+\fB InvalidAccount\fR
+    The job's account is invalid. 
+\fB InvalidQOS\fR
+    The job's QOS is invalid. 
+\fB JobHeldAdmin\fR
+    The job is held by a system administrator. 
+\fB JobHeldUser\fR
+    The job is held by the user. 
+\fB JobLaunchFailure\fR
+    The job could not be launched. This may be due to a file system problem, invalid program name, etc. 
+\fB Licenses\fR
+    The job is waiting for a license. 
+\fB NodeDown\fR
+    A node required by the job is down. 
+\fB NonZeroExitCode\fR
+    The job terminated with a non-zero exit code. 
+\fB PartitionDown\fR
+    The partition required by this job is in a DOWN state. 
+\fB PartitionInactive\fR
+    The partition required by this job is in an Inactive state and not able to start jobs. 
+\fB PartitionNodeLimit\fR
+    The number of nodes required by this job is outside of it's partitions current limits. Can also indicate that required nodes are DOWN or DRAINED. 
+\fB PartitionTimeLimit\fR
+    The job's time limit exceeds it's partition's current time limit. 
+\fB Priority\fR
+    One or more higher priority jobs exist for this partition or advanced reservation. 
+\fB Prolog\fR
+    It's PrologSlurmctld program is still running. 
+\fB QOSJobLimit\fR
+    The job's QOS has reached its maximum job count. 
+\fB QOSResourceLimit\fR
+    The job's QOS has reached some resource limit. 
+\fB QOSTimeLimit\fR
+    The job's QOS has reached its time limit. 
+\fB ReqNodeNotAvail\fR
+    Some node specifically required by the job is not currently available. The node may currently be in use, reserved for another job, in an advanced reservation, DOWN, DRAINED, or not responding. Nodes which are DOWN, DRAINED, or not responding will be identified as part of the job's "reason" field as "UnavailableNodes". Such nodes will typically require the intervention of a system administrator to make available. 
+\fB Reservation\fR
+    The job is waiting its advanced reservation to become available. 
+\fB Resources\fR
+    The job is waiting for resources to become available. 
+\fB SystemFailure\fR
+    Failure of the Slurm system, a file system, the network, etc. 
+\fB TimeLimit\fR
+    The job exhausted its time limit. 
+\fB QOSUsageThreshold\fR
+    Required QOS threshold has been breached. 
+\fB WaitingForScheduling\fR
+    No reason has been set for this job yet. Waiting for the scheduler to determine the appropriate reason. 
+
+
+
+.SH SEE ALSO
+squeue(1), scontrol(1), sinfo(1, sacct(1), sprio(1)
+.SH BUGS
+No known bugs.
+.SH AUTHOR
+Original Version: Ian Nascimento (inascime@lbl.gov), Helen He (yhe@lbl.gov)
+
