@@ -16,6 +16,7 @@
 
 # Some initial setup
 #set -x
+echo "This is the new, improved sqs. For more information please view the man page on sqs or access the following link: https://www.nersc.gov/users/computational-systems/cori/running-jobs/monitoring-jobs/"
 export PATH=/opt/slurm/default/bin:$PATH
 LC_ALL=C
 
@@ -373,13 +374,6 @@ if [[ "$sum" ]]; then summary;fi
 exit 0
 }
 
-# sqs with no args
-if (( $# == "0" )); then
-	echo "$c_header"
-        squeue -h -o "%.18i %.2t %.10r %.10u %.12j %.5D %.5M %.10l %.20V %.12P %.20S %.15Q" | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1
-        exit 0
-fi
-
 # format styles
 
 format=1
@@ -397,8 +391,14 @@ formatonce() {
 # parsing flags/options
 thenp=1
 parts=1
+userr=1
 while true; do
         case $1 in
+
+		-a)
+			userr=0
+			shift
+			;;
 
                 -w)
                         format="2"
@@ -469,12 +469,11 @@ while true; do
 			case $1 in
 				[a-zA-Z]*)
 					userr="1"
-                        		name="$1"
+                        		myuser="$1"
 					shift
 					;;
 				*)
 					userr="1"
-					name="$USER"
 					;;
                        	esac
                         ;;
@@ -556,6 +555,7 @@ then
 		if [[ "$userr" == 1 ]]
 		then 
 			echo "$w_header"
+# Notice that in order to preserve the ranking, we simply grep the user AFTER everything is said and done. We do want to eventually come up with a better solution performance wise
 			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2| grep -w "$name"
 			if [ $sum ];then summary;fi
 			exit 0
@@ -569,7 +569,7 @@ elif [[ "$format" == 2 && "$parts" == 0 ]]; then
 		if [[ "$userr" == 1 ]]
 		then
 			echo "$w_header"
-			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -w "$name" | chop "$grab_p" "$nps"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -w "$myuser" | chop "$grab_p" "$nps"
 			if [ $sum ]; then summary;fi
 			exit 0		
 		else
@@ -584,7 +584,7 @@ elif [[ "$format" == 1 && "$parts" != 0 ]]; then
 		if [[ "$userr" == 1 ]]
 		then
 			echo "$c_header"
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -w "$name"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -w "$myuser"
 			if [ $sum ];then summary;fi
 			exit 0
 		else
@@ -597,7 +597,7 @@ elif [[ "$format" == 1 && "$parts" == 0 ]]; then
 		if [[ "$userr" = 1 ]]
 		then
 			echo "$c_header"
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -w "$name" | chop "$grab_p" "$nps"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -w "$myuser" | chop "$grab_p" "$nps"
 			if [ $sum ]; then summary;fi
 			exit 0
 		else
