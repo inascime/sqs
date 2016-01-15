@@ -4,25 +4,37 @@
 .SH NAME
 sqs \- Formatted SLURM squeue output. 
 .SH SYNOPSIS
-sqs [ -x -w -u username -r -s ] { --help } { -n } { -f [jobid] [jobid] [jobid] }
+        sqs [ -a -w -u username -p partition[,partition,partition...] -np partition[,partition,partition...] ]
+        sqs -s
+	sqs -n
+        sqs --help
+        sqs -f jobid[,jobid,jobid...]
+
 .SH DESCRIPTION
-sqs is a wrapper for squeue, sinfo and scontrol. It adds two additional, sorted ranking columns: "RANK_BF" and "RANK_P". RANK_BF contains ranking based on jobs approximate START TIME(which is a product of backfill) while RANK_P contains ranking based on jobs assigned PRIORITY. The goal is to give users a rough estimate of their jobs position in the queue. RANK_BF and RANK_P may or may not agree with each other, RANK_P will be sorted in a numerical order. sqs can output a summary that includes general information about jobs in the queue and offers a number of options for usability described below. sqs provides a better format and sorting of job status information. The options -n and -f cannot be combined with other options as they essentially are direct wrappers to sinfo(1) and scontrol(1). The command sprio(1) can demonstrate jobs PRIORITY. 
+
+sqs is a wrapper for squeue, sinfo and scontrol. sqs can output a summary that includes general information about jobs in the queue and offers a number of options for usability described below. sqs provides a better format and sorting of job status information. It adds two additional, sorted ranking columns: "RANK_BF" and "RANK_P". Column RANK_P shows the ranking with absolute priority value, which is a function of partition QOS, job wait time, and fair share.  Jobs with higher priority won't necessarily run earlier due to various runlimits, total node limits, and backfill depth we have set. Column RANK_BF shows the ranking using the best estimated start time (if available) at a backfill scheduling cycle of every 30 sec, so the ranking is dynamic and changes frequently along with the changes in thequeued jobs. 
+
 .SH OPTIONS
-	-w Wider display including additional columns.
 
-	\fB-u username\fR Prints only jobs for "username". If no username is provided, print jobs for the user issuing sqs
+	\fB-a\fR	 			Print all jobs in the queue
+.LP	
+	\fB-w\fR 				Wider display including additional columns.
 
-	-s Prints a summary about jobs in the queue
+	\fB-u username(s)\fR 			Prints only jobs for comma separated list of usernames. If no username is provided, print jobs for the user issuing sqs
 
-	-n Displays formatted information about partitions and nodes
+	\fB-s\fR 				Prints a summary about jobs in the queue
 
-	\fB-f jobid[,jobid,jobid...]\fR Prints very detailed information about specified jobid(s) or all jobs if no jobid(s) given.
+	\fB-n\fR 				Displays formatted information about partitions and nodes
 
-	\fB-p partition[,partition,partition...]\fR Prints jobs in the partition(s) specified.
+	\fB-f jobid(s)\fR 			Prints very detailed information about comma separated list of specified jobid(s) or all jobs if no jobid(s) given.
 
-	\fB-np partition[,partition,partition...]\fR Do not print jobs in the partition(s) specified
+	\fB-p partition(s)\fR 			Prints jobs in the list of comma separated list of partition(s) specified.
 
-	--help Prints usage
+	\fB-np partition(s)\fR 			Do not print jobs in the comma separated list of partition(s) specified
+
+	\fB-nr\fR 				Do NOT print running jobs.
+
+	\fB--help\fR 				Prints usage
 
 .SH JOB STATE CODES
 Jobs typically pass through several states in the course of their execution. The typical states are PENDING, RUNNING, SUSPENDED, COMPLETING, and COMPLETED. An explanation of each state follows.
