@@ -16,7 +16,18 @@
 
 # Some initial setup
 #set -x
-echo "This is the new, improved sqs. For more information please view the man page on sqs or access the following link: https://www.nersc.gov/users/computational-systems/cori/running-jobs/monitoring-jobs/"
+#echo "This is the new, improved sqs. For more information please view the man page on sqs or access the following link: https://www.nersc.gov/users/computational-systems/cori/running-jobs/monitoring-jobs/"
+echo "===============================================================================
+This version provides two columns of ranking values. Column RANK_P shows 
+the ranking with absolute priority value, which is a function of partition
+QOS, job wait time, and fair share.  Jobs with higher priority won't necessarily 
+run earlier due to various run limits, total node limits, and backfill depth
+we have set. Column RANK_BF shows the ranking using the best estimated start time
+(if available) at a backfill scheduling cycle of every 30 sec, so the ranking is 
+dynamic and changes frequently along with the changes in the queued jobs. 
+Please see the sqs.new man page for available options.
+===============================================================================" >&2
+
 export PATH=/opt/slurm/default/bin:$PATH
 LC_ALL=C
 
@@ -49,7 +60,7 @@ set -o pipefail
 squeueargs=()
 userr=0
 w_header="JOBID              ST   USER       NAME         NODES REQUESTED  USED       SUBMIT_TIME           PARTITION  QOS        MEMORY     CPUS       REPO       RANK_P   RANK_BF  REASON"
-c_header="JOBID              ST   REASON       USER         NAME         NODES        USED         REQUESTED    SUBMIT                PARTITION    RANK_P       RANK_ST"
+c_header="JOBID              ST   REASON       USER         NAME         NODES        USED         REQUESTED    SUBMIT                PARTITION    RANK_P       RANK_BF"
 
 ### BEGIN OF FUNCTIONS SECTION ###
 
@@ -76,27 +87,30 @@ exit 1
 
 synopsis() {
 
-echo "usage
-      sqs [ -w -x -u username -r -s -p partition -np partition ] [ --help ] { -n } { -f jobid jobid jobid...} [ jobid jobid... ]      
-      -n and -f cannot be combined with other options
+echo "Usage: sqs [OPTIONS] 
 
-        -w Wide listing including more details
+        sqs [ -a -w -u username -p partition[,partition,partition...] -np partition[,partition,partition...] ]
+        sqs -s
+        sqs --help
+        sqs -f jobid[,jobid,jobid...]
 
-        -u username Prints only jobs for username. If no username is provided, print jobs for the user issuing sqs
+        -a			Prints all jobs in the queue
 
-        -s Prints a summary about jobs in the queue
+        -w			Wider display including additional columns.
 
-        -p partition[,partition,partition...] Print jobs in the partition(s) specified
+        -u username 		Prints only jobs for "username". If no username is provided, print jobs for the user issuing sqs
 
-	-np partition[,partition,partition...] Do not print jobs in the partition(s) specified
+        -s			Prints a summary about jobs in the queue
 
-        -n Displays formatted information about partitions and nodes
+        -n			Displays formatted information about partitions and nodes
 
-        -f jobid[,jobid,jobid...] Prints very detailed information about jobid or all jobs if no jobid provided.
+        -f jobid(s)		Prints very detailed information about comma separated list of specified jobid(s) or all jobs if no jobid(s) given.
 
-	-x Wide listing including array expanded jobs
+        -p partition(s)		Prints jobs in comma separated list of partition(s) specified.
 
-        --help Prints usage"
+        -np partition(s)	Do not print jobs in the comma separated list of partition(s) specified
+
+        --help			Prints usage"
 
 	exit "$1"
 }
@@ -189,10 +203,21 @@ fi
 }
 
 chop() {
-# -np && -p function, chops partitions according to user flags
+# handles -nr, -np && -p
+
+if [[ ! -n "$1" && ! -n "$2" ]]; then
+	awk '$2 != "R"'
+	rm -f $mytemp
+	exit 0
+fi
+
 if [[ -n "$1" && ! -n "$2" ]]
 then
-	awk '{print}' > $mytemp
+	if [[ "$3" == 1 ]]; then
+		awk '{print}' > $mytemp
+	elif [[ "$3" == 0 ]]; then
+		awk '$2 != "R"' > $mytemp
+	fi
 	IFS=, read -ra parti <<< "$1"; for a in "${parti[@]}"
 	do
 		grep "$a" $mytemp
@@ -201,10 +226,13 @@ then
 	exit 0
 elif [[ ! -n "$1" && -n "$2" ]]
 then
-	mtemp=$(mktemp)
-	awk '{print}' > $mitemp 
-	grep -E -v $(echo "$2" | tr ',' '|') $mitemp 
-        rm -f $mitemp
+	if [[ "$3" == 1 ]]; then
+		awk '{print}' > $mytemp 
+	elif [[ "$3" == 0 ]]; then
+		awk '$2 != "R"' > $mytemp
+	fi
+	grep -E -v $(echo "$2" | tr ',' '|') $mytemp 
+        rm -f $mytemp
 	exit 0
 fi
 }
@@ -388,10 +416,12 @@ formatonce() {
 
 ### END OF FUNCTIONS SECTION ###
 
-# parsing flags/options
-thenp=1
+# init some "markers"
 parts=1
 userr=1
+no_r=1
+
+#parse flags/options
 while true; do
         case $1 in
 
@@ -402,11 +432,11 @@ while true; do
 
                 -w)
                         format="2"
-			name="$USER"
                         shift
                         ;;
 		-x)
 			format="2"
+			userr=0
 			squeueargs+=(-r)
 			shift
 			;;
@@ -449,11 +479,17 @@ while true; do
 				done
 			fi
 			rm -f $np_parts
-			mitemp=$(mktemp)
+			mytemp=$(mktemp)
 			parts=0
 			nps="$2"
 			shift 2
 			;;	
+		-nr)
+			mytemp=$(mktemp)
+			parts=0
+			no_r=0
+			shift
+			;;
 		-s)
 			if [[ $# -gt "1" ]]
 			then 
@@ -556,7 +592,7 @@ then
 		then 
 			echo "$w_header"
 # Notice that in order to preserve the ranking, we simply grep the user AFTER everything is said and done. We do want to eventually come up with a better solution performance wise
-			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2| grep -w "$name"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2| grep -E $(echo "$myuser" | tr ',' '|')
 			if [ $sum ];then summary;fi
 			exit 0
 		else
@@ -569,12 +605,12 @@ elif [[ "$format" == 2 && "$parts" == 0 ]]; then
 		if [[ "$userr" == 1 ]]
 		then
 			echo "$w_header"
-			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -w "$myuser" | chop "$grab_p" "$nps"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -E $(echo "$myuser" | tr ',' '|') | chop "$grab_p" "$nps" "$no_r"
 			if [ $sum ]; then summary;fi
 			exit 0		
 		else
 			echo "$w_header"
-			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps" "$no_r"
 			if [ $sum ];then summary;fi
 			exit 0
 		fi
@@ -584,7 +620,7 @@ elif [[ "$format" == 1 && "$parts" != 0 ]]; then
 		if [[ "$userr" == 1 ]]
 		then
 			echo "$c_header"
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -w "$myuser"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -E $(echo "$myuser" | tr ',' '|')
 			if [ $sum ];then summary;fi
 			exit 0
 		else
@@ -597,12 +633,12 @@ elif [[ "$format" == 1 && "$parts" == 0 ]]; then
 		if [[ "$userr" = 1 ]]
 		then
 			echo "$c_header"
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -w "$myuser" | chop "$grab_p" "$nps"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -E $(echo "$myuser" | tr ',' '|') | chop "$grab_p" "$nps" "$no_r"
 			if [ $sum ]; then summary;fi
 			exit 0
 		else
 			echo "$c_header"
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | chop "$grab_p" "$nps"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | chop "$grab_p" "$nps" "$no_r"
                         if [ $sum ]; then summary;fi
                         exit 0
                 fi
