@@ -89,7 +89,7 @@ synopsis() {
 
 echo "Usage: sqs [OPTIONS] 
 
-        sqs [ -a -w -u username -p partition[,partition,partition...] -np partition[,partition,partition...] ]
+        sqs [ -a -w -u username[,username,username...]  -nr -p partition[,partition,partition...] -np partition[,partition,partition...] ]
         sqs -s
         sqs --help
         sqs -f jobid[,jobid,jobid...]
@@ -98,7 +98,7 @@ echo "Usage: sqs [OPTIONS]
 
         -w			Wider display including additional columns.
 
-        -u username 		Prints only jobs for "username". If no username is provided, print jobs for the user issuing sqs
+        -u username(s) 		Prints only jobs for list of comma separated usernames. If no username is provided, print jobs for the user issuing sqs
 
         -s			Prints a summary about jobs in the queue
 
@@ -109,6 +109,8 @@ echo "Usage: sqs [OPTIONS]
         -p partition(s)		Prints jobs in comma separated list of partition(s) specified.
 
         -np partition(s)	Do not print jobs in the comma separated list of partition(s) specified
+
+	-nr			Do NOT print running jobs.
 
         --help			Prints usage"
 
