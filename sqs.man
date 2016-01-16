@@ -4,7 +4,7 @@
 .SH NAME
 sqs \- Formatted SLURM squeue output. 
 .SH SYNOPSIS
-        sqs [ -a -w -u username -p partition[,partition,partition...] -np partition[,partition,partition...] ]
+        sqs [ -a -w -u username -nr -p partition[,partition,partition...] -np partition[,partition,partition...] ]
         sqs -s
 	sqs -n
         sqs --help
