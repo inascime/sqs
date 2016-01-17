@@ -18,6 +18,11 @@
 #set -x
 #echo "This is the new, improved sqs. For more information please view the man page on sqs or access the following link: https://www.nersc.gov/users/computational-systems/cori/running-jobs/monitoring-jobs/"
 echo "===============================================================================
+This version of sqs by default only displays user's own jobs. To see all jobs 
+in the queue, use the "-a" flag.
+
+Please see the sqs.new man page or "sqs.new --help" for available options.
+
 This version provides two columns of ranking values. Column RANK_P shows 
 the ranking with absolute priority value, which is a function of partition
 QOS, job wait time, and fair share.  Jobs with higher priority won't necessarily 
@@ -25,8 +30,8 @@ run earlier due to various run limits, total node limits, and backfill depth
 we have set. Column RANK_BF shows the ranking using the best estimated start time
 (if available) at a backfill scheduling cycle of every 30 sec, so the ranking is 
 dynamic and changes frequently along with the changes in the queued jobs. 
-Please see the sqs.new man page for available options.
-===============================================================================" >&2
+==============================================================================
+" >&2
 
 export PATH=/opt/slurm/default/bin:$PATH
 LC_ALL=C
@@ -94,25 +99,25 @@ echo "Usage: sqs [OPTIONS]
         sqs --help
         sqs -f jobid[,jobid,jobid...]
 
-        -a			Prints all jobs in the queue
+        -a			Display all jobs in the queue. The default behavior of sqs without "-a" is to display user's jobs only.
 
         -w			Wider display including additional columns.
 
-        -u username(s) 		Prints only jobs for list of comma separated usernames. If no username is provided, print jobs for the user issuing sqs
+        -u username(s) 		Display only jobs for list of comma separated usernames. If no username is provided, print jobs for the user issuing sqs
 
-        -s			Prints a summary about jobs in the queue
+        -s			Display a summary about jobs in the queue
 
-        -n			Displays formatted information about partitions and nodes
+        -n			Display formatted information about partitions and nodes
 
-        -f jobid(s)		Prints very detailed information about comma separated list of specified jobid(s) or all jobs if no jobid(s) given.
+        -f jobid(s)		Display very detailed information about comma separated list of specified jobid(s) or all jobs if no jobid(s) given.
 
-        -p partition(s)		Prints jobs in comma separated list of partition(s) specified.
+        -p partition(s)		Display jobs in comma separated list of partition(s) specified.
 
-        -np partition(s)	Do not print jobs in the comma separated list of partition(s) specified
+        -np partition(s)	Do not display jobs in the comma separated list of partition(s) specified
 
-	-nr			Do NOT print running jobs.
+	-nr			Do NOT display running jobs.
 
-        --help			Prints usage"
+        --help			Print usage"
 
 	exit "$1"
 }
@@ -306,6 +311,7 @@ while IFS=$'\n' read -r one two; do [[ "$one" == "CG" ]] && total_cg=$((total_cg
 while IFS=$'\n' read -r three four; do [[ "$three" == "CG" ]] && total_cg=$((total_cgx+four)); done <<< "$cgtx"
 
 border
+echo "# Host: $c_host" 
 echo "# Total jobs: $jobs / $jobs_expanded (array expansion)"
 echo "# Pending Jobs: $p_jobs / $pex_jobs"
 echo "# Running Jobs: $r_jobs / $rex_jobs"
@@ -457,6 +463,9 @@ while true; do
 					exit 1
 				fi
 				done
+			else
+				echo "$sqs: Aborting, -p requires an arguement."
+				synopsis 1
 			fi
 			rm -f $a_parts
 			mytemp=$(mktemp)
@@ -479,6 +488,9 @@ while true; do
 						exit 1
 				fi
 				done
+			else
+				echo "$sqs: Aborting, -np requires an arguement."
+				synopsis 1
 			fi
 			rm -f $np_parts
 			mytemp=$(mktemp)
@@ -571,6 +583,9 @@ while true; do
 						exit 1
 					fi
 				done
+			else
+				echo "$sqs: Aborting, -j requires an arguement."
+				synopsis 1
 			fi
 			jids=$(echo "$2" | tr ',' '|')
 			shift 2
