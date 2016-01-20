@@ -76,34 +76,31 @@ exit 1
 
 synopsis() {
 
-echo "Usage: sqs [OPTIONS] 
+echo "Usage: sqs [OPTIONS]
 
         sqs [ -a -w -u username[,username,username...]  -nr -p partition[,partition,partition...] -np partition[,partition,partition...] ]
         sqs -s
-        sqs --help
+        sqs -n
         sqs -f jobid[,jobid,jobid...]
+        sqs --help
 
-        -a			Display all jobs in the queue. The default behavior of sqs without "-a" is to display user's jobs only.
+        -a                      Display all jobs in the queue. The default behavior of sqs without "-a" is to display user's jobs only.
+        -w                      Wider display including additional columns.
+        -u username(s)          Display only jobs for list of comma separated usernames. If no username is provided, print jobs for the user issuing sqs
+        -p partition(s)         Display jobs in comma separated list of partition(s) specified.
+        -np partition(s)        Do not display jobs in the comma separated list of partition(s) specified
+        -nr                     Do NOT display running jobs.
 
-        -w			Wider display including additional columns.
+        -s                      Display a summary about jobs in the queue
 
-        -u username(s) 		Display only jobs for list of comma separated usernames. If no username is provided, print jobs for the user issuing sqs
+        -n                      Display formatted information about partitions and nodes
 
-        -s			Display a summary about jobs in the queue
+        -f jobid(s)             Display very detailed information about comma separated list of specified jobid(s) or all jobs if no jobid(s) given.
 
-        -n			Display formatted information about partitions and nodes
+        --help                  Print usage"
 
-        -f jobid(s)		Display very detailed information about comma separated list of specified jobid(s) or all jobs if no jobid(s) given.
+        exit "$1"
 
-        -p partition(s)		Display jobs in comma separated list of partition(s) specified.
-
-        -np partition(s)	Do not display jobs in the comma separated list of partition(s) specified
-
-	-nr			Do NOT display running jobs.
-
-        --help			Print usage"
-
-	exit "$1"
 }
 
 cmd() {
@@ -260,21 +257,6 @@ jobs=$(wc -l < $QUEUEJOBS)
 jobs_expanded=$(wc -l < $EXQUEUEJOBS)
 all_partitions=$(awk '{print $1}' $NODEINFO)
 p_count=$(wc -l < $NODEINFO)
-
-# --- Begin of backlog ---
-#i should do something about shared partitions for the backlog calculation here
-# squeue's %.M may not display all digits so some special handling is required
-#used=$(squeue -h -o "%.t %.M" | awk '{if ($1!="R")next}{print}' | awk -F: -v 'tis=0' 'NF==1 { tis+=$1 } NF==2 {tis += $2 + ($1*60) } NF==3 { tis += ($1*60*60)+($2*60)+$3 } END {print tis}')
-#used=$(echo "scale=25;$used/3600" | bc)
-#request=$(squeue -h -o "%.l" | awk -F: -v 'tis=0' 'NF==1 { tis+=$1 } NF==2 {tis += $2 + ($1*60) } NF==3 { tis += ($1*60*60)+($2*60)+$3 } END {print tis}')
-#request=$(echo "scale=25;$request/3600" | bc)
-#backlog_hours=$(echo "scale=25;$request-$used" |bc)
-#backlog_sum=$(echo "scale=25;$backlog_hours * $jobs" |bc)
-#total_backlog=$(echo "scale=3;$backlog_sum/$total_nodes" | bc)
-# --- End of backlog ---
-# let's grab some node stats for our usage summary
-# subject to changes
-
 p_jobs=$(awk '$1=="PD"' $QUEUEJOBS | wc -l)
 r_jobs=$(awk '$1=="R"' $QUEUEJOBS | wc -l)
 pex_jobs=$(awk '$1=="PD"' $EXQUEUEJOBS | wc -l)
@@ -312,7 +294,7 @@ do
         tcg_nodes=0
         tcgx_nodes=0
 
-        #if [[ $queue = *\* ]]; then queue=${queue%?};fi
+        if [[ $queue = *\* ]]; then queue=${queue%?};fi
         pr_jobs=$(awk '{if($1!="R")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
         cg_jobs=$(awk '{if($1!="CG")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
         p_pd=$(awk '{if($1!="PD")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
@@ -452,7 +434,7 @@ while true; do
 				fi
 				done
 			else
-				echo "$sqs: Aborting, -p requires an arguement."
+				echo "$sqs: Aborting, -p requires an argument."
 				synopsis 1
 			fi
 			rm -f $a_parts
@@ -477,7 +459,7 @@ while true; do
 				fi
 				done
 			else
-				echo "$sqs: Aborting, -np requires an arguement."
+				echo "$sqs: Aborting, -np requires an argument."
 				synopsis 1
 			fi
 			rm -f $np_parts
@@ -572,7 +554,7 @@ while true; do
 					fi
 				done
 			else
-				echo "$sqs: Aborting, -j requires an arguement."
+				echo "$sqs: Aborting, -j requires an argument."
 				synopsis 1
 			fi
 			jids=$(echo "$2" | tr ',' '|')
