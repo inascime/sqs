@@ -16,22 +16,6 @@
 
 # Some initial setup
 #set -x
-#echo "This is the new, improved sqs. For more information please view the man page on sqs or access the following link: https://www.nersc.gov/users/computational-systems/cori/running-jobs/monitoring-jobs/"
-echo "===============================================================================
-This version of sqs by default only displays user's own jobs. To see all jobs 
-in the queue, use the "-a" flag.
-
-Please see the sqs.new man page or "sqs.new --help" for available options.
-
-This version provides two columns of ranking values. Column RANK_P shows 
-the ranking with absolute priority value, which is a function of partition
-QOS, job wait time, and fair share.  Jobs with higher priority won't necessarily 
-run earlier due to various run limits, total node limits, and backfill depth
-we have set. Column RANK_BF shows the ranking using the best estimated start time
-(if available) at a backfill scheduling cycle of every 30 sec, so the ranking is 
-dynamic and changes frequently along with the changes in the queued jobs. 
-==============================================================================
-" >&2
 
 export PATH=/opt/slurm/default/bin:$PATH
 LC_ALL=C
@@ -199,19 +183,23 @@ rearrange() {
 # Fix the formatting
 n_format=$1
 if [[ "$n_format" == "1" ]]; then
-	awk '{printf "%-18s %-4s %-12s %-12s %-12s %-12s %-12s %-12s %-21s %-12s %-12s %-12s\n", $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$14,$13 ; }'
+	awk '{printf "%-18s %-4s %-12s %-12s %-12s %-12s %-12s %-12s %-21s %-12s %-12s %-12s\n", $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$14,$13 ; }' | sed -e "1 s/^.*$/$c_header/"
 	#awk '{printf "%-18s %-4s %-10s %-14s %-15s %-15s %-12s %-10s %-21s %-10s %-15s %-15s\n", $1,$2,$4,$5,$6,$7,$8,$9,$10,$18,$17,$13,$14 ; }'
 fi
 if [[ "$n_format" == "2" ]]; then
 	#echo "$w_header"
-	awk '{printf "%-18s %-4s %-10s %-12s %-5s %-10s %-10s %-21s %-10s %-10s %-10s %-10s %-10s %-8s %-8s %-15s\n", $1,$2,$4,$5,$6,$7,$8,$9,$10,$11,$13,$14,$15,$18,$17,$3 ; }'
+	awk '{printf "%-18s %-4s %-10s %-12s %-5s %-10s %-10s %-21s %-10s %-10s %-10s %-10s %-10s %-8s %-8s %-15s\n", $1,$2,$4,$5,$6,$7,$8,$9,$10,$11,$13,$14,$15,$18,$17,$3 ; }' | sed -e "1 s/^.*$/$w_header/"
 #sed -e "1 s/^.*$/$wide_header/"
 fi
 }
 
 chop() {
 # handles -nr, -np && -p
-
+if [[ "$4" == "1" ]]; then
+	echo "$c_header"
+else
+	echo "$w_header"
+fi
 if [[ ! -n "$1" && ! -n "$2" ]]; then
 	awk '$2 != "R"'
 	rm -f $mytemp
@@ -324,7 +312,7 @@ do
         tcg_nodes=0
         tcgx_nodes=0
 
-        if [[ $queue = *\* ]]; then queue=${queue%?};fi
+        #if [[ $queue = *\* ]]; then queue=${queue%?};fi
         pr_jobs=$(awk '{if($1!="R")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
         cg_jobs=$(awk '{if($1!="CG")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
         p_pd=$(awk '{if($1!="PD")next;if($2!="'$queue'")next;print}' $QUEUEJOBS | wc -l)
@@ -608,12 +596,10 @@ then
 		if [[ "$userr" == 1 ]]
 		then 
 			echo "$w_header"
-# Notice that in order to preserve the ranking, we simply grep the user AFTER everything is said and done. We do want to eventually come up with a better solution performance wise
 			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2| grep -E $(echo "$myuser" | tr ',' '|')
 			if [ $sum ];then summary;fi
 			exit 0
 		else
-			echo "$w_header"
 			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust "1" | adj 1 | resources | rearrange 2 
 			if [ $sum ];then summary;fi
 			exit 0
@@ -622,12 +608,11 @@ elif [[ "$format" == 2 && "$parts" == 0 ]]; then
 		if [[ "$userr" == 1 ]]
 		then
 			echo "$w_header"
-			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -E $(echo "$myuser" | tr ',' '|') | chop "$grab_p" "$nps" "$no_r"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -E $(echo "$myuser" | tr ',' '|') | chop "$grab_p" "$nps" "$no_r" "2"
 			if [ $sum ]; then summary;fi
 			exit 0		
 		else
-			echo "$w_header"
-			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps" "$no_r"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps" "$no_r" "2"
 			if [ $sum ];then summary;fi
 			exit 0
 		fi
@@ -641,7 +626,6 @@ elif [[ "$format" == 1 && "$parts" != 0 ]]; then
 			if [ $sum ];then summary;fi
 			exit 0
 		else
-			echo "$c_header"
 			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1
 			if [ $sum ]; then summary;fi
 			exit 0
@@ -650,12 +634,11 @@ elif [[ "$format" == 1 && "$parts" == 0 ]]; then
 		if [[ "$userr" = 1 ]]
 		then
 			echo "$c_header"
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -E $(echo "$myuser" | tr ',' '|') | chop "$grab_p" "$nps" "$no_r"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -E $(echo "$myuser" | tr ',' '|') | chop "$grab_p" "$nps" "$no_r" "1"
 			if [ $sum ]; then summary;fi
 			exit 0
 		else
-			echo "$c_header"
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | chop "$grab_p" "$nps" "$no_r"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | chop "$grab_p" "$nps" "$no_r" "1"
                         if [ $sum ]; then summary;fi
                         exit 0
                 fi
