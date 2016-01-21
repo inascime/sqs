@@ -192,11 +192,6 @@ fi
 
 chop() {
 # handles -nr, -np && -p
-if [[ "$4" == "1" ]]; then
-	echo "$c_header"
-else
-	echo "$w_header"
-fi
 if [[ ! -n "$1" && ! -n "$2" ]]; then
 	awk '$2 != "R"'
 	rm -f $mytemp
@@ -210,6 +205,7 @@ then
 	elif [[ "$3" == 0 ]]; then
 		awk '$2 != "R"' > $mytemp
 	fi
+	awk 'NR == 1' $mytemp
 	IFS=, read -ra parti <<< "$1"; for a in "${parti[@]}"
 	do
 		grep "$a" $mytemp
