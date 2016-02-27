@@ -193,9 +193,15 @@ fi
 chop() {
 # handles -nr, -np && -p
 if [[ ! -n "$1" && ! -n "$2" ]]; then
-	awk '$2 != "R"'
-	rm -f $mytemp
-	exit 0
+	if [[ -n "$4" ]]; then
+		awk '$2 != "R"' | grep -E $(echo "$4" | tr ',' '|')
+		rm -f $mytemp
+		exit 0
+	else
+		awk '$2 != "R"'
+		rm -f $mytemp
+		exit 0
+	fi
 fi
 
 if [[ -n "$1" && ! -n "$2" ]]
@@ -205,10 +211,14 @@ then
 	elif [[ "$3" == 0 ]]; then
 		awk '$2 != "R"' > $mytemp
 	fi
-	awk 'NR == 1' $mytemp
+	#awk 'NR == 1' $mytemp
 	IFS=, read -ra parti <<< "$1"; for a in "${parti[@]}"
 	do
-		grep "$a" $mytemp
+		if [[ -n "$4" ]]; then
+			grep "$a" $mytemp | grep "$4"
+		else
+			grep "$a" $mytemp
+		fi
 	done
 	rm -f $mytemp
 	exit 0
@@ -219,8 +229,13 @@ then
 	elif [[ "$3" == 0 ]]; then
 		awk '$2 != "R"' > $mytemp
 	fi
-	grep -E -v $(echo "$2" | tr ',' '|') $mytemp 
-        rm -f $mytemp
+	if [[ -n "$4" ]]; then
+		grep -E -v $(echo "$2" | tr ',' '|') $mytemp | grep "$4" 
+        	rm -f $mytemp
+	else
+		grep -E -v $(echo "$2" | tr ',' '|') $mytemp
+	fi
+	rm -f $mytemp
 	exit 0
 fi
 }
@@ -586,11 +601,11 @@ elif [[ "$format" == 2 && "$parts" == 0 ]]; then
 		if [[ "$userr" == 1 ]]
 		then
 			echo "$w_header"
-			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | grep -E $(echo "$myuser" | tr ',' '|') | chop "$grab_p" "$nps" "$no_r" "2"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps" "$no_r" "$myuser"
 			if [ $sum ]; then summary;fi
 			exit 0		
 		else
-			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps" "$no_r" "2"
+			cmd | convert_t 7 | rank_resources 1 | arrange 1 | adjust 1 | adj 1 | resources | rearrange 2 | chop "$grab_p" "$nps" "$no_r"
 			if [ $sum ];then summary;fi
 			exit 0
 		fi
@@ -612,12 +627,13 @@ elif [[ "$format" == 1 && "$parts" == 0 ]]; then
 		if [[ "$userr" = 1 ]]
 		then
 			echo "$c_header"
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | grep -E $(echo "$myuser" | tr ',' '|') | chop "$grab_p" "$nps" "$no_r" "1"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | chop "$grab_p" "$nps" "$no_r" "$myuser"
 			if [ $sum ]; then summary;fi
 			exit 0
 		else
-			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | chop "$grab_p" "$nps" "$no_r" "1"
+			cmd | convert_t 8 | rank_resources 0 | arrange 0 | adjust 0 | adj 0 |resources | rearrange 1 | chop "$grab_p" "$nps" "$no_r"
                         if [ $sum ]; then summary;fi
                         exit 0
                 fi
 fi
+
